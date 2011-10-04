@@ -43,17 +43,19 @@ import java.net.*;
         public void run(){
             byte[] temp = new byte[20];
             DatagramPacket connect = new DatagramPacket(temp, temp.length);
+            Message resp_mess = Message.SLAVE_CONNECTION;
             DatagramPacket response = new DatagramPacket(temp, temp.length);
             while(true){
                 try{masterSocket.receive(connect);}
                 catch(IOException e){System.out.println("connection non recue: "+e);}
                 //TODO lire le tableau, voir si le message est de type connexion
                 //si c'est le cas
-                if(mess_type == Message.SLAVE_CONNECTION){
-                    Message mess = Message.SLAVE_CONNECTION;
-                    mess.setID(last_id);
-                    temp = mess.toString().getBytes();
-                    try{masterSocket.send(connect.setData(temp));}
+                if(resp_mess == Message.SLAVE_CONNECTION){
+                    
+                    resp_mess.setID(last_id);
+                    temp = resp_mess.toString().getBytes();
+                    connect.setData(temp);
+                    try{masterSocket.send(connect);}
                     catch(IOException e){System.out.println("Message de connection non envoye: "+e);
                     }
                 }
@@ -103,11 +105,11 @@ import java.net.*;
                this.follow_up_mess.setTimeStamp(System.nanoTime());
                temp_FU_mess = this.follow_up_mess.toString().getBytes();
                
-               //TODO diffusion message sync
+               // diffusion message sync
                try{masterSocket.send(syncPacket);}
                catch(IOException e){System.out.println("could not send SYNC: "+e);}
                
-               //TODO diffusion message follow_up
+               // diffusion message follow_up
                try{masterSocket.send(FUPacket);}
                catch(IOException e){System.out.println("could not send FOLLOW_UP: "+e);}
                
@@ -126,8 +128,36 @@ import java.net.*;
          
          @Override
          public void run(){
-            //accept message d'un esclave
-            this.reception_time = System.nanoTime();
+             
+             Message rec_mess;
+             byte[] temp_rec = new byte[20];
+             DatagramPacket rec = new DatagramPacket(temp_rec, temp_rec.length);
+             
+             Message send_mess = Message.DELAY_RESPONSE;
+             byte[] temp_send = new byte[20];
+             DatagramPacket send = new DatagramPacket(temp_send, temp_send.length);
+             
+             while(true){
+                 //accept message d'un esclave
+                 try{masterSocket.receive(rec);}
+                 catch(IOException e){System.out.println("delay request not recieved: "+e);}
+                //calcul de l'heure de reception
+                this.reception_time = System.nanoTime();
+                //recuperation des infos du message recu
+                rec_mess = Message.DELAY_REQUEST;
+                if(rec_mess == Message.DELAY_REQUEST){
+                    send_mess.setID(rec_mess.getID());
+                    send_mess.setTimeStamp(this.reception_time);
+                    temp_send = send_mess.toString().getBytes();
+                    send.setData(temp_send);
+                    try{masterSocket.send(send);}
+                    catch(IOException e){System.out.println("Delay response not sent: "+e);}
+                    
+                }
+                
+                
+             }
+            
          }
          
       };/*end delay_thread*/
