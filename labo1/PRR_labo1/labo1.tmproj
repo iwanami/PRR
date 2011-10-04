@@ -2,8 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>currentDocument</key>
-	<string>Master.java</string>
 	<key>documents</key>
 	<array>
 		<dict>
@@ -14,9 +12,15 @@
 		</dict>
 		<dict>
 			<key>filename</key>
+			<string>Message.java</string>
+			<key>lastUsed</key>
+			<date>2011-09-29T07:15:06Z</date>
+		</dict>
+		<dict>
+			<key>filename</key>
 			<string>Master.java</string>
 			<key>lastUsed</key>
-			<date>2011-09-28T18:01:08Z</date>
+			<date>2011-10-04T06:36:06Z</date>
 			<key>selected</key>
 			<true/>
 		</dict>
@@ -36,9 +40,23 @@
 			<key>caret</key>
 			<dict>
 				<key>column</key>
-				<integer>44</integer>
+				<integer>0</integer>
 				<key>line</key>
-				<integer>3</integer>
+				<integer>33</integer>
+			</dict>
+			<key>firstVisibleColumn</key>
+			<integer>0</integer>
+			<key>firstVisibleLine</key>
+			<integer>22</integer>
+		</dict>
+		<key>Message.java</key>
+		<dict>
+			<key>caret</key>
+			<dict>
+				<key>column</key>
+				<integer>15</integer>
+				<key>line</key>
+				<integer>6</integer>
 			</dict>
 			<key>firstVisibleColumn</key>
 			<integer>0</integer>
@@ -74,12 +92,6 @@
 			<integer>0</integer>
 		</dict>
 	</dict>
-	<key>openDocuments</key>
-	<array>
-		<string>labo1.java</string>
-		<string>Master.java</string>
-		<string>Slave.java</string>
-	</array>
 	<key>showFileHierarchyDrawer</key>
 	<true/>
 	<key>windowFrame</key>
