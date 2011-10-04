@@ -1,8 +1,12 @@
-enum Message {
+
+import java.io.Serializable;
+
+enum Message implements Serializable{
    SYNC,
    FOLLOW_UP,
    DELAY_REQUEST,
-   DELAY_RESPONSE;
+   DELAY_RESPONSE,
+   SLAVE_CONNECTION;
    
    private long time_stamp;
    
@@ -15,5 +19,10 @@ enum Message {
    public int getID(){return id;}
    
    public void setID(int id){this.id = id;}
+   
+   @Override
+   public String toString(){
+       return ""+this.ordinal()+this.id+this.time_stamp;
+   }
    
 }
