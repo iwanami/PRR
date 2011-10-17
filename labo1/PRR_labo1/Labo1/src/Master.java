@@ -56,8 +56,7 @@ import java.net.*;
                     temp = resp_mess.toString().getBytes();
                     connect.setData(temp);
                     try{masterSocket.send(connect);}
-                    catch(IOException e){System.out.println("Message de connection non envoye: "+e);
-                    }
+                    catch(IOException e){System.out.println("Message de connection non envoye: "+e);}
                 }
             }
         }  
