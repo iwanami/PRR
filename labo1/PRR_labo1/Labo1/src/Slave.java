@@ -14,21 +14,18 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.net.UnknownHostException;
  
- class Slave {
+ class Slave extends Thread{
    
    private int id;
    
-   private int h_locale;
+   private long h_locale;
    
-   private int ecart;
+   private long ecart;
    
-   private int delai;
+   private long delai;
    
-   private int decalage;
+   private long decalage;
    
-   private Thread synch_thread;
-   
-   private Thread delay_thread;
    
    private InetAddress groupAddress;
    
@@ -49,14 +46,14 @@ import java.net.UnknownHostException;
       
       //on envoie la demande de connection pour recuperer le numero d'id et "s'inscrire" 
       //au protocole en incrementant le compteur du maitre.
-      Message connect = Message.SLAVE_CONNECTION;
+      Message connect = Message.CONNECTION_REQUEST;
       long ct = System.nanoTime();
       connect.setTimeStamp(ct);
       DatagramPacket connect_datagram = new DatagramPacket(connect.toString().getBytes(),
                                                            connect.toString().getBytes().length,
                                                            this.groupAddress, this.groupPort);
       //creation du paquet de reponse pour la connexion
-      byte[] buffer = new byte[20];
+      byte[] buffer = new byte[13];
       DatagramPacket connect_resp = new DatagramPacket(buffer, buffer.length, this.groupAddress, this.groupPort);
       
       
@@ -78,81 +75,94 @@ import java.net.UnknownHostException;
         connect = Message.byteArrayToMessage(connect_resp.getData());
         //on recupere les infos de connection seulement si le message correspond au timestamp de creation du
         //message de connection et si c'est un message de connection
-        if (connect == Message.SLAVE_CONNECTION && connect.getTimeStamp() == ct){
+        if (connect == Message.CONNECTION_RESPONSE && connect.getTimeStamp() == ct){
             this.id = connect.getID();
             System.out.println("slave " + id + ": connection recieved");
             break;
         }
       }
       
-      //deuxieme partie: creation du thread traitant le SYNC et le FOLLOW_UP
-      this.synch_thread = new SynchThread();
-      
-      //troisieme partie: creation du thread traitant
-      this.delay_thread = new DelayThread();
-      
-      //lancement des taches
-      //this.synch_thread.start();
-      //this.delay_thread.start();
-      
    }
    
-   /**
-    * Nom: SynchThread
-    * But: Cette tache repond aux messages SYNCH et FOLLOW UP envoyes par le maitre
-    * TODO remplir un peu le but...
-    */
-   private class SynchThread extends Thread{
        
-      byte[] buffer = new byte[20];
+      
+
+  private void doSync(){
+      
+      byte[] buffer = new byte[13];
       DatagramPacket dp = new DatagramPacket(buffer, buffer.length, groupAddress, groupPort);
       Message recieved;
-
-      @Override
-      public void run(){
-          while(true){
-              try{
-                  //on attend un message du maitre
+      long sync_reception_time;
+      
+      try{
+          //on attend un message du maitre
+          masterSocket.receive(dp);
+          System.out.println("slave " + id + ": synch recieved");
+          recieved = Message.byteArrayToMessage(dp.getData());
+          //si c'est un message de type SYNC et qu'il est destine a l'esclave courant (testable avec l'ID)
+          //on traite le message
+          if(recieved == Message.SYNC && recieved.getID() == id){
+              //lorsque le message SYNC est recu, on recupere l'heure de l'esclave
+              sync_reception_time = System.nanoTime();
+              //Comme le message FOLLOW_UP est envoye immediatement apres le SYNC par le maitre, on l'attend
+              //dans l'esclave
+              //il se peut cependant que le prochain message recu ne soit pas immediatement le FOLLOW_UP, on
+              //patiente jusqu'a reception du bon message
+              while(true){
+                  //on attend le message du maitre
                   masterSocket.receive(dp);
-                  System.out.println("slave " + id + ": synch recieved");
                   recieved = Message.byteArrayToMessage(dp.getData());
-                  //si c'est un message de type SYNC et qu'il est destine a l'esclave courant (testable avec l'ID)
-                  //on traite le message
-                  if(recieved == Message.SYNC && recieved.getID() == id){
-                      //TODO traitement
+                  //si le message correspond au follow_up destine a l'esclave courant, on recupere le temps
+                  //et on calcule l'ecart
+                  if(recieved == Message.FOLLOW_UP && recieved.getID() == id){
+                      ecart = recieved.getTimeStamp()-sync_reception_time;
+                      //une fois l'ecart calcule, on peut l'ajouter au temps local
+                      h_locale = System.nanoTime()+ecart;
+                      //on sort de la boucle d'attente du FOLLOW_UP et on attend le SYNC suivant
+                      break;
                   }
               }
-              catch(IOException e){}
           }
-      }/*end run*/
-   }/*end SynchThread*/
+      }
+      catch(IOException e){}
+  }/*end doSync*/
    
-   /**
-    * Nom: DelayThread
-    * But: Cette tache envoie des messages DELAY REQUEST au maitre et attend en retour les messages
-    *      DELAY RESPONSE
-    * TODO remplir un peu le but...
-    */
-   private class DelayThread extends Thread{
-      byte[] buffer = new byte[20];
+
+      
+      
+  public void doDelay(){
+
+      byte[] buffer = new byte[13];
       DatagramPacket dp = new DatagramPacket(buffer, buffer.length, groupAddress, groupPort);
+      Message sent = Message.DELAY_REQUEST;
       Message recieved;
 
-      @Override
-      public void run(){
-          while(true){
-              try{
-                  masterSocket.receive(dp);
-                  System.out.println("slave " + id + ": delay recieved");
-                  recieved = Message.byteArrayToMessage(dp.getData());
-                  if(recieved.getID() == id){
-                      //TODO traitement
-                  }
-              }
-              catch(IOException e){}
+      sent.setID(id);
+      try{
+          buffer = Message.messageToByteArray(sent);
+          dp.setData(buffer);
+          masterSocket.send(dp);
+
+          masterSocket.receive(dp);
+          System.out.println("slave " + id + ": delay recieved");
+          recieved = Message.byteArrayToMessage(dp.getData());
+          if(recieved.getID() == id){
+              //TODO traitement
           }
-      }/*end run*/
-   }/*end DelayThread*/
+      }
+      catch(IOException e){}
+  }/*end run*/
+  
+  @Override
+  public void run(){
+      while(true){
+        doSync();
+        //TODO wait random time
+        doDelay();
+        //TODO wait random time
+      }
+      
+  }
    
    
- }/*end Slave*/
+}/*end Slave*/

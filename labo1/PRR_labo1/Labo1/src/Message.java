@@ -13,7 +13,8 @@ enum Message{
    FOLLOW_UP,
    DELAY_REQUEST,
    DELAY_RESPONSE,
-   SLAVE_CONNECTION;
+   CONNECTION_REQUEST,
+   CONNECTION_RESPONSE;
    
    private long time_stamp;
    
@@ -32,17 +33,59 @@ enum Message{
        return ""+this.ordinal()+";"+this.id+";"+this.time_stamp;
    }
    
+   public static byte[] intToByteArray(int value) {
+        byte[] array = new byte[4];
+        for(int i = 0; i < 4; i++){
+            array[3-i] = (byte)(value >>> 8*i);
+        }
+        return array;
+    }
+   
+   public static int byteArrayToInt(byte[] b, int offset) {
+        int value = 0;
+        for (int i = 0; i < 4; i++) {
+            int shift = (4 - 1 - i) * 8;
+            value += (b[i + offset] & 0x000000FF) << shift;
+        }
+        return value;
+    }
+   
+   public static byte[] longToByteArray(long value){
+       byte[] array = new byte[8];
+        for(int i = 0; i < 8; i++){
+            array[7-i] = (byte)(value >>> 8*i);
+        }
+        return array;
+   }
+   
+   public static long byteArrayToLong(byte[] b, int offset) {
+        long value = 0;
+        for (int i = 0; i < 8; i++) {
+            int shift = (7 - i) * 8;
+            value += (b[i + offset] & 0x000000FF) << shift;
+        }
+        return value;
+    }
+
+   public static byte[] messageToByteArray(Message mess){
+       byte[] array = new byte[13];
+       byte[] id = intToByteArray(mess.getID());
+       byte[] timestamp = longToByteArray(mess.getTimeStamp());
+       array[0] = (byte)mess.ordinal();
+       System.arraycopy(id, 0, array, 1, 4);
+       System.arraycopy(timestamp, 0, array, 5, 8);
+       return array;
+   }
+   
    public static Message byteArrayToMessage(byte[] array){
        Message m;
-       String msg = new String(array);
-       System.out.println("Message: converting "+msg);
-       String[] msg_vals = msg.split(";");
-       int msg_type = Integer.parseInt(msg_vals[0]);
-       m = Message.values()[msg_type];
-       m.setID(Integer.parseInt(msg_vals[1]));
-       //m.setTimeStamp(Long.valueOf(msg_vals[2]));
+       int ordinal = array[0];
+       int id = byteArrayToInt(array, 1);
+       long timestamp = byteArrayToLong(array, 5);
+       m = Message.values()[ordinal];
+       m.setID(id);
+       m.setTimeStamp(timestamp);
        return m;
-       
    }
    
 }

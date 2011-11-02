@@ -64,7 +64,8 @@ import java.net.*;
        public void run(){
             byte[] temp = new byte[20];
             DatagramPacket connect = new DatagramPacket(temp, temp.length, groupAddress, groupPort);
-            Message resp_mess;
+            Message resp_mess = Message.CONNECTION_RESPONSE;
+            Message conn_mess;
             //DatagramPacket response = new DatagramPacket(temp, temp.length);
             while(true){
                 //on attend les demandes de connexions des esclaves pour leur attibuer un id
@@ -72,11 +73,12 @@ import java.net.*;
                 catch(IOException e){System.out.println("connection non recue: "+e);}
 
                 //on décode puis verifie le type du message
-                resp_mess = Message.byteArrayToMessage(connect.getData());
-                if(resp_mess == Message.SLAVE_CONNECTION){
+                conn_mess = Message.byteArrayToMessage(connect.getData());
+                if(conn_mess == Message.CONNECTION_REQUEST){
                     System.out.println("master: connection recieved");
                     //on attribue le prochain id avant de re-encoder et renvoyer le message
                     resp_mess.setID(last_id++);
+                    resp_mess.setTimeStamp(conn_mess.getTimeStamp());
                     System.out.println("last id: "+ last_id);
                     temp = resp_mess.toString().getBytes();
                     connect.setData(temp);
@@ -102,9 +104,9 @@ import java.net.*;
      @Override
      public void run(){
 
-        byte[] temp_sync_mess = new byte[20];
+        byte[] temp_sync_mess = new byte[13];
 
-        byte[] temp_FU_mess = new byte[20];
+        byte[] temp_FU_mess = new byte[13];
 
         DatagramPacket syncPacket = new DatagramPacket(temp_sync_mess, temp_sync_mess.length, 
                                                        groupAddress, groupPort);
@@ -119,20 +121,19 @@ import java.net.*;
 
            //creation du message SYNC
            this.synch_mess.setID(this.current_id);
-           temp_sync_mess = this.synch_mess.toString().getBytes();
+           temp_sync_mess = Message.messageToByteArray(this.synch_mess);
 
-
-           //creation du message FOLLOW_UP
-           this.follow_up_mess.setID(this.current_id);
-           this.follow_up_mess.setTimeStamp(System.nanoTime());
-           temp_FU_mess = this.follow_up_mess.toString().getBytes();
-
-           // diffusion message sync
+           //diffusion du message SYNC
            try{masterSocket.send(syncPacket);}
            catch(IOException e){System.out.println("could not send SYNC: "+e);}
            System.out.println("master: synch sent");
+           
+           //creation du message FOLLOW_UP
+           this.follow_up_mess.setID(this.current_id);
+           this.follow_up_mess.setTimeStamp(System.nanoTime());
+           temp_FU_mess = Message.messageToByteArray(this.follow_up_mess);
 
-           // diffusion message follow_up
+           //diffusion du message FOLLOW_UP
            try{masterSocket.send(FUPacket);}
            catch(IOException e){System.out.println("could not send FOLLOW_UP: "+e);}
            System.out.println("master: follow up sent");
