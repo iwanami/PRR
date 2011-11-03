@@ -1,35 +1,70 @@
 /**
+ * PRR - Laboratoire 1 - Precision Time Protocol
  * Nom           : Master
- * But           : Permet de modeliser une entité maitre dans le 'Precision
- *                 Time Protocol' décrit par la norme IEEE 1588.
- * Fonctionnement: 
- * Remarques     :
+ * But           : Permet de modeliser une entite maitre dans le 'Precision Time Protocol' decrit par la norme
+ *                 IEEE 1588. Le maitre a pour objectif de partager son harloge avec les esclaves
+ * Fonctionnement: Le maitre possede trois fonctionalites, tournant chacune dans un thread propre:
+ *                 - synchronisation: Le maitre envoie a chaque esclave, tour a tour, un message SYNC, suivi d'un
+ *                   message FOLLOW UP. Celui-ci contient la mesure de l'horloge au moment de l'envoi de SYNC. Ceci
+ *                   permet aux esclaves de mesurer l'ecart entre l'horloge maitre et la leur.
+ *                 - mesure du delai de transmission: Le maitre attend sur les messages DELAY REQUES envoyes par les
+ *                   esclaves. Le temps est mesure a la reception de ceux-cis et renvoyes dans les DELAY RESPONSE,
+ *                   permettant aux esclaves de mesurer le delai de transmission avec le maitre.
+ *                 - connexion de nouveaux esclaves: le maitre attend les messages CONNECTION REQUEST des esclaves et
+ *                   incremente le compteur d'esclaves afin de tous les inclure dans le protocole de synchro.
  * @author       : Numa Trezzini
  * @author       : Fabrizio Beretta Piccoli
  */
 
 
+import java.awt.Dimension;
 import java.io.IOException;
 import java.net.*;
+import javax.swing.JFrame;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
  
  class Master {
    
+   //declaration des taches realisant les fonctionalites presentees ci-dessus
    private Thread synch_thread;
    
    private Thread delay_thread;
    
    private Thread connection_thread;
    
-   private int last_id = 1;
+   //dernier ID attribue a un esclave
+   private int last_id = 0;
    
+   //facteur pour les temps d'attente
+   private int s;
+   
+   //adresse du groupe de diffusion des messages
    private InetAddress groupAddress;
    
-   private MulticastSocket masterSocket;
-   
+   //port du groupe de diffusion des messages
    private int groupPort;
    
-   public Master(String masterAddress, int port){
-    
+   //socket de communication entre maitre et esclaves
+   private MulticastSocket masterSocket;
+   
+   //permet au maitre d'avoir une fenetre d'affichage propre
+   private JFrame fenetre_console = new JFrame();
+   private JScrollPane scroll_pane;
+   private JTextArea console = new JTextArea(); 
+        
+   
+   public Master(String masterAddress, int port, int s){
+      this.s = s;
+      //initialisation de la console maitre
+      this.scroll_pane = new JScrollPane(console);
+      this.fenetre_console.setTitle("maitre "+0);
+      this.fenetre_console.add(scroll_pane);
+      this.fenetre_console.setPreferredSize(new Dimension(300, 500));
+      this.fenetre_console.setVisible(true);
+      this.fenetre_console.pack();
+      
+      //on se connecte au groupe
       try{
           this.groupAddress = InetAddress.getByName(masterAddress);
           this.groupPort = port;
@@ -39,52 +74,46 @@ import java.net.*;
       catch(UnknownHostException e){}
       catch(IOException e){}
       
+      //on cree les threads
       this.connection_thread = new ConnectionThread();
-      
-      /**
-       * Creation du thread Maitre envoyant les messages de synchronisation
-       * aux esclaves. Creer les threads dans le constructeur permet non
-       * seulement d'avoir acces depuis les threads de communication aux
-       * informations contenues dans le maitre, mais aussi a ce que le maitre
-       * soit operationnel des sa creation.
-       */
       this.synch_thread = new SynchThread();
-      
-      
       this.delay_thread = new DelayThread();
-      
-      this.connection_thread.start();
-      //this.synch_thread.start();
-      //this.delay_thread.start();
      
    }/*end Master*/
    
+   /**
+    * Nom: start
+    * But: demarre les threads du maitre
+    */
+   public void start(){
+      this.connection_thread.start();
+      this.synch_thread.start();
+      this.delay_thread.start();
+   }
+   
+   /**
+    * Nom: ConnectionThread
+    * But: attend les demandes de connexion des esclaves
+    * Fonctionnement: Attend les messages de type CONNECTION REQUEST et incremente le compteur d'esclaves sur
+    *                 reception
+    */
    private class ConnectionThread extends Thread{
        @Override 
        public void run(){
-            byte[] temp = new byte[20];
-            DatagramPacket connect = new DatagramPacket(temp, temp.length, groupAddress, groupPort);
-            Message resp_mess = Message.CONNECTION_RESPONSE;
-            Message conn_mess;
+            byte[] temp = new byte[13];
+            DatagramPacket dp = new DatagramPacket(temp, temp.length);
+            Message recieve;
             //DatagramPacket response = new DatagramPacket(temp, temp.length);
             while(true){
                 //on attend les demandes de connexions des esclaves pour leur attibuer un id
-                try{masterSocket.receive(connect);}
+                try{masterSocket.receive(dp);}
                 catch(IOException e){System.out.println("connection non recue: "+e);}
 
                 //on décode puis verifie le type du message
-                conn_mess = Message.byteArrayToMessage(connect.getData());
-                if(conn_mess == Message.CONNECTION_REQUEST){
-                    System.out.println("master: connection recieved");
-                    //on attribue le prochain id avant de re-encoder et renvoyer le message
-                    resp_mess.setID(last_id++);
-                    resp_mess.setTimeStamp(conn_mess.getTimeStamp());
-                    System.out.println("last id: "+ last_id);
-                    temp = resp_mess.toString().getBytes();
-                    connect.setData(temp);
-                    try{masterSocket.send(connect);}
-                    catch(IOException e){System.out.println("Message de connection non envoye: "+e);}
-                    System.out.println("master: connection sent");
+                recieve = Message.byteArrayToMessage(dp.getData());
+                if(recieve == Message.CONNECTION_REQUEST){
+                    last_id++;
+                    break;
                 }
             }
         }/*end run*/
@@ -95,52 +124,57 @@ import java.net.*;
     * But: cette tache a pour objectif d'envoyer les messages SYNC et FOLLOW UP a chaque esclave
     *      ecoutant le maitre. L'envoi, malgre le multicast, est filtre par les esclaves en fonction
     *      du numero d'id envoye par le maitre. Ainsi, chaque esclave reagira tour a tour aux messages recus
+    * Fonctionnement: Cette tache envoie a chaque esclave, tour a tour, un message SYNC, juste apres avoir mesure
+    *                 l'horloge. Le message FOLLOW UP est ensuite construit et envoye avec le temps mesure precedemment
+    *                 effectuee. La tache patiente le temps indique par s avant de contacter l'esclave suivant.
+    *                 Les esclaves filtrent les messages qui leurs sont destines grace a l'id envoye avec les messages
     */
    private class SynchThread extends Thread{
-     int current_id = 1;
-     Message synch_mess = Message.SYNC;
-     Message follow_up_mess = Message.FOLLOW_UP;
+     
 
      @Override
      public void run(){
-
+         
+        int current_id = 1;
+        Message synch_mess = Message.SYNC;
+        Message follow_up_mess = Message.FOLLOW_UP;
+         
         byte[] temp_sync_mess = new byte[13];
 
         byte[] temp_FU_mess = new byte[13];
 
-        DatagramPacket syncPacket = new DatagramPacket(temp_sync_mess, temp_sync_mess.length, 
-                                                       groupAddress, groupPort);
-        DatagramPacket FUPacket = new DatagramPacket(temp_FU_mess, temp_FU_mess.length,
-                                                     groupAddress, groupPort);
+        DatagramPacket sync_packet = new DatagramPacket(temp_sync_mess, temp_sync_mess.length, groupAddress, groupPort);
+        DatagramPacket FU_packet = new DatagramPacket(temp_FU_mess, temp_FU_mess.length, groupAddress, groupPort);
+        
+        long send_time;
         while(true){
-           //calcul du nouvel id. lorsque l'ID courant vaut last_id, il 
-           //passe a 0, qui est l'identifiant du maitre. nous evitons de
-           //lui envoyer un message en ajoutant 1. le range parcouru par
-           //current_id est donc [1;last_id]
-           this.current_id = (this.current_id%last_id)+1;
+            
+           //calcul du prochain id.
+           current_id = (++current_id%last_id);
 
            //creation du message SYNC
-           this.synch_mess.setID(this.current_id);
-           temp_sync_mess = Message.messageToByteArray(this.synch_mess);
-
+           synch_mess.setID(current_id);
+           temp_sync_mess = Message.messageToByteArray(synch_mess);
+           sync_packet.setData(temp_sync_mess);
+           
            //diffusion du message SYNC
-           try{masterSocket.send(syncPacket);}
+           send_time = System.nanoTime();
+           try{masterSocket.send(sync_packet);}
            catch(IOException e){System.out.println("could not send SYNC: "+e);}
-           System.out.println("master: synch sent");
            
            //creation du message FOLLOW_UP
-           this.follow_up_mess.setID(this.current_id);
-           this.follow_up_mess.setTimeStamp(System.nanoTime());
-           temp_FU_mess = Message.messageToByteArray(this.follow_up_mess);
-
+           follow_up_mess.setID(current_id);
+           follow_up_mess.setTimeStamp(send_time);
+           console.append("master time: "+send_time+"\n");
+           temp_FU_mess = Message.messageToByteArray(follow_up_mess);
+           FU_packet.setData(temp_FU_mess);
            //diffusion du message FOLLOW_UP
-           try{masterSocket.send(FUPacket);}
+           try{masterSocket.send(FU_packet);}
            catch(IOException e){System.out.println("could not send FOLLOW_UP: "+e);}
-           System.out.println("master: follow up sent");
 
            //attente avant la synchronisation du prochain esclave.
            try{
-              sleep(3000);
+              sleep(s);
            }
            catch(InterruptedException e){}
         }
@@ -152,41 +186,46 @@ import java.net.*;
     * But: cette tache a pour objectif de renvoyer, lors de la reception d'un message de type DELAY REQUEST,
     *      un message DELAY RESPONSE contenant l'heure de reception et l'ID de l'envoyeur. L'envoi du maitre
     *      est filtre par les esclaves de la meme facon que dans la tache SynchThread.
+    * Fonctionnement: La tache mesure l'horloge juste apres reception d'un message. Si ce message est de type
+    *                 DELAY REQUEST, alors renvoie a l'esclave un message de type DELAY RESPONSE contenant l'id de
+    *                 l'esclave envoyeur et le temps de reception du message. Ceci permet de determiner le delai de
+    *                 transmission d'un packet entre le maitre et l'esclave
     */
    private class DelayThread extends Thread{
-     long reception_time;
+     
 
      @Override
      public void run(){
+         
+         long reception_time;
+         Message recieve;
+         byte[] temp_recieve = new byte[13];
+         DatagramPacket recieve_dp = new DatagramPacket(temp_recieve, temp_recieve.length, groupAddress, groupPort);
 
-         Message rec_mess;
-         byte[] temp_rec = new byte[20];
-         DatagramPacket rec = new DatagramPacket(temp_rec, temp_rec.length, groupAddress, groupPort);
-
-         Message send_mess = Message.DELAY_RESPONSE;
-         byte[] temp_send = new byte[20];
-         DatagramPacket send = new DatagramPacket(temp_send, temp_send.length, groupAddress, groupPort);
+         Message send = Message.DELAY_RESPONSE;
+         byte[] temp_send = new byte[13];
+         DatagramPacket send_dp = new DatagramPacket(temp_send, temp_send.length, groupAddress, groupPort);
 
          while(true){
             //accept message d'un esclave
-            try{masterSocket.receive(rec);}
+            try{masterSocket.receive(recieve_dp);}
             catch(IOException e){System.out.println("delay request not recieved: "+e);}
-            System.out.println("master: delay recieved");
             //calcul de l'heure de reception
-            this.reception_time = System.nanoTime();
+            reception_time = System.nanoTime();
             //recuperation des infos du message recu
-            rec_mess = Message.byteArrayToMessage(rec.getData());
+            recieve = Message.byteArrayToMessage(recieve_dp.getData());
             //si le message est de type DELAY REQUEST, on renvoie un message contenant l'ID de l'envoyeur
             //et le temps de reception du-dit message.
-            if(rec_mess == Message.DELAY_REQUEST){
-                send_mess.setID(rec_mess.getID());
-                send_mess.setTimeStamp(this.reception_time);
-                temp_send = send_mess.toString().getBytes();
-                send.setData(temp_send);
-                try{masterSocket.send(send);}
+            if(recieve == Message.DELAY_REQUEST){
+
+                send.setID(recieve.getID());
+                send.setTimeStamp(reception_time);
+                temp_send = Message.messageToByteArray(send);
+                send_dp.setData(temp_send);
+                try{masterSocket.send(send_dp);}
                 catch(IOException e){System.out.println("Delay response not sent: "+e);}
-                System.out.println("master: delay sent");
-            }  
+            }
+            console.append("master time: "+reception_time+"\n");
          }  
      }/*end run*/
    }/*end DelayThread*/
